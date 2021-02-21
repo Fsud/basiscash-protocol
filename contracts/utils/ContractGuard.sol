@@ -1,6 +1,8 @@
 pragma solidity ^0.6.12;
 
 contract ContractGuard {
+
+    //记录对应block上对应地址是否调用过
     mapping(uint256 => mapping(address => bool)) private _status;
 
     function checkSameOriginReentranted() internal view returns (bool) {
@@ -11,7 +13,7 @@ contract ContractGuard {
         return _status[block.number][msg.sender];
     }
 
-    modifier onlyOneBlock() {
+    //被修饰的方法，保证同一sender或合约只能调用其中一个方法，且只能调用一次
         require(
             !checkSameOriginReentranted(),
             'ContractGuard: one block, one function'

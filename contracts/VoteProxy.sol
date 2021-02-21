@@ -4,6 +4,7 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 import './owner/Operator.sol';
 
+//看起来像是更新boardroom合约用的
 contract VoteProxy is Operator {
     // Events
     event BoardroomChanged(

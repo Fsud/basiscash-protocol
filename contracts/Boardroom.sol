@@ -9,6 +9,7 @@ import './owner/Operator.sol';
 import './utils/ContractGuard.sol';
 import './interfaces/IBasisAsset.sol';
 
+//share token包装合约
 contract ShareWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -26,12 +27,14 @@ contract ShareWrapper {
         return _balances[account];
     }
 
+    // 将sender地址的share发送到share合约，同时记录sender地址到余额。
     function stake(uint256 amount) public virtual {
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         share.safeTransferFrom(msg.sender, address(this), amount);
     }
 
+    //取回share
     function withdraw(uint256 amount) public virtual {
         uint256 directorShare = _balances[msg.sender];
         require(
@@ -67,7 +70,10 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
 
     IERC20 private cash;
 
+    //每个董事和它的座位
     mapping(address => Boardseat) private directors;
+
+    //董事会历史数组，记录了每次增发收到的数量，时间，和每share收益
     BoardSnapshot[] private boardHistory;
 
     /* ========== CONSTRUCTOR ========== */
@@ -85,6 +91,7 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
     }
 
     /* ========== Modifiers =============== */
+    // 判断sender是否为董事，即是否存在share
     modifier directorExists {
         require(
             balanceOf(msg.sender) > 0,
@@ -93,6 +100,7 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
         _;
     }
 
+    // 更新座位数据，取款和claim的时候，都会事先调用
     modifier updateReward(address director) {
         if (director != address(0)) {
             Boardseat memory seat = directors[director];
@@ -133,14 +141,17 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
 
     // =========== Director getters
 
+    //每个share当前分配的奖励
     function rewardPerShare() public view returns (uint256) {
         return getLatestSnapshot().rewardPerShare;
     }
 
+    //赚取的奖励
     function earned(address director) public view returns (uint256) {
         uint256 latestRPS = getLatestSnapshot().rewardPerShare;
         uint256 storedRPS = getLastSnapshotOf(director).rewardPerShare;
 
+        //last减去store，是从上次计算，到现在这段时间新增的可以申请的PRS奖励。乘以share数量，再加上上次计算的cash，就是一共可以提取的cash数量
         return
             balanceOf(director).mul(latestRPS.sub(storedRPS)).div(1e18).add(
                 directors[director].rewardEarned
@@ -148,7 +159,7 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
     }
 
     /* ========== MUTATIVE FUNCTIONS ========== */
-
+    //调用shareWrapper的stake
     function stake(uint256 amount)
         public
         override
@@ -160,6 +171,7 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
         emit Staked(msg.sender, amount);
     }
 
+    // 调用shareWrapper的 withdraw
     function withdraw(uint256 amount)
         public
         override
@@ -172,11 +184,13 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
         emit Withdrawn(msg.sender, amount);
     }
 
+    // 取出所有share
     function exit() external {
         withdraw(balanceOf(msg.sender));
         claimReward();
     }
 
+    //将cash reward 发送给sender，清空reward
     function claimReward() public updateReward(msg.sender) {
         uint256 reward = directors[msg.sender].rewardEarned;
         if (reward > 0) {
@@ -186,6 +200,7 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
         }
     }
 
+    //由国库合约增发时调用，接受cash，并记录snapshot
     function allocateSeigniorage(uint256 amount)
         external
         onlyOneBlock
@@ -198,9 +213,12 @@ contract Boardroom is ShareWrapper, ContractGuard, Operator {
         );
 
         // Create & add new snapshot
+        // 上次每share分配了多少cash
         uint256 prevRPS = getLatestSnapshot().rewardPerShare;
+        //下次每share分配多少cash，这里的值是加上了prev，所以是代表从合约开始到现在的数据
         uint256 nextRPS = prevRPS.add(amount.mul(1e18).div(totalSupply()));
 
+        //存入snapshot数组
         BoardSnapshot memory newSnapshot = BoardSnapshot({
             time: block.number,
             rewardReceived: amount,

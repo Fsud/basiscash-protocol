@@ -62,6 +62,7 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 import '../interfaces/IRewardDistributionRecipient.sol';
 
+//DAI包装合约，记录每个地址在这个合约中的dai的余额
 contract DAIWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -92,6 +93,7 @@ contract DAIWrapper {
     }
 }
 
+//抵押DAI白嫖BAC的池子
 contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
     IERC20 public basisCash;
     uint256 public DURATION = 5 days;
@@ -100,7 +102,9 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
+    //当前的每token奖励额度，当用户stake或withdraw时才触发更新
     uint256 public rewardPerTokenStored;
+    //存储用户的每token奖励额度，便于在不更新用户rewards的情况下，就能计算出实际应该奖励多少token。
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
     mapping(address => uint256) public deposits;
@@ -125,6 +129,8 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         _;
     }
 
+    //更新全局最新的每token奖励额度，更新全局的奖励计算时间。
+    //计算用户的奖励额度，更新数组。更新用户本次计算的每token奖励额
     modifier updateReward(address account) {
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
@@ -135,14 +141,18 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         _;
     }
 
+    //当前时间，用于lastUpdateTime
     function lastTimeRewardApplicable() public view returns (uint256) {
         return Math.min(block.timestamp, periodFinish);
     }
 
+    //返回每个DAI奖励多少BAC
     function rewardPerToken() public view returns (uint256) {
+        //没有人抵押，返回stored的值
         if (totalSupply() == 0) {
             return rewardPerTokenStored;
         }
+        //返回stored的值加上到现在为止新增的值。使用从上次更新到现在的时间差，乘以奖励率处于总抵押量
         return
             rewardPerTokenStored.add(
                 lastTimeRewardApplicable()
@@ -153,6 +163,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
             );
     }
 
+    //和boardroom合约的earned方法计算公式一致。
     function earned(address account) public view returns (uint256) {
         return
             balanceOf(account)
@@ -162,6 +173,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
     }
 
     // stake visibility is public as overriding LPTokenWrapper's stake() function
+    //抵押dai方法，抵押数量不能超过20000，抵押前触发更新reward
     function stake(uint256 amount)
         public
         override
@@ -179,6 +191,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         emit Staked(msg.sender, amount);
     }
 
+    //提取dai方法
     function withdraw(uint256 amount)
         public
         override
@@ -191,11 +204,13 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         emit Withdrawn(msg.sender, amount);
     }
 
+    //推出池子，提取dai和bas奖励
     function exit() external {
         withdraw(balanceOf(msg.sender));
         getReward();
     }
 
+    //提取bas奖励
     function getReward() public updateReward(msg.sender) checkStart {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
@@ -205,6 +220,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         }
     }
 
+    //更新奖励率，更新结束时间，在分配cash金额时被调用
     function notifyRewardAmount(uint256 reward)
         external
         override
@@ -212,6 +228,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         updateReward(address(0))
     {
         if (block.timestamp > starttime) {
+            //如果已经开始，起到延长奖励结束时间的作用
             if (block.timestamp >= periodFinish) {
                 rewardRate = reward.div(DURATION);
             } else {
@@ -223,6 +240,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
             periodFinish = block.timestamp.add(DURATION);
             emit RewardAdded(reward);
         } else {
+            //未开始，计算奖励率，计算结束时间
             rewardRate = reward.div(DURATION);
             lastUpdateTime = starttime;
             periodFinish = starttime.add(DURATION);

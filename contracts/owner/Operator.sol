@@ -3,6 +3,7 @@ pragma solidity ^0.6.0;
 import '@openzeppelin/contracts/GSN/Context.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 
+//操作者，权限控制的作用。可以转移操作者
 contract Operator is Context, Ownable {
     address private _operator;
 
@@ -20,6 +21,7 @@ contract Operator is Context, Ownable {
         return _operator;
     }
 
+    //修饰必须为操作者
     modifier onlyOperator() {
         require(
             _operator == msg.sender,
@@ -36,6 +38,7 @@ contract Operator is Context, Ownable {
         _transferOperator(newOperator_);
     }
 
+    //转移操作者
     function _transferOperator(address newOperator_) internal {
         require(
             newOperator_ != address(0),

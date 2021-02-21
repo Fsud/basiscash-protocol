@@ -7,11 +7,13 @@ import '../distribution/BACUSDTPool.sol';
 import '../distribution/BACyCRVPool.sol';
 import '../interfaces/IDistributor.sol';
 
+//初始化cash分配器
 contract InitialCashDistributor is IDistributor {
     using SafeMath for uint256;
 
     event Distributed(address pool, uint256 cashAmount);
 
+    //只会执行一次
     bool public once = true;
 
     IERC20 public cash;
@@ -30,6 +32,7 @@ contract InitialCashDistributor is IDistributor {
         totalInitialBalance = _totalInitialBalance;
     }
 
+    //将cash平均分配到所有cash池子里，触发计算奖励
     function distribute() public override {
         require(
             once,

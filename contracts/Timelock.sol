@@ -31,6 +31,7 @@ pragma solidity ^0.6.0;
  */
 import '@openzeppelin/contracts/math/SafeMath.sol';
 
+//时间锁合约
 contract Timelock {
     using SafeMath for uint256;
 
@@ -62,16 +63,21 @@ contract Timelock {
         uint256 eta
     );
 
+    // 优雅的时间
     uint256 public constant GRACE_PERIOD = 14 days;
+    // 最小的时间
     uint256 public constant MINIMUM_DELAY = 2 days;
+    //最大的时间
     uint256 public constant MAXIMUM_DELAY = 30 days;
 
     address public admin;
     address public pendingAdmin;
     uint256 public delay;
 
+    //待执行的事务，value为状态是否有效
     mapping(bytes32 => bool) public queuedTransactions;
 
+    //构造函数传入管理员地址和delay
     constructor(address admin_, uint256 delay_) public {
         require(
             delay_ >= MINIMUM_DELAY,
@@ -88,6 +94,7 @@ contract Timelock {
 
     receive() external payable {}
 
+    //只能由时间锁合约自己调用，更新delay
     function setDelay(uint256 delay_) public {
         require(
             msg.sender == address(this),
@@ -106,6 +113,7 @@ contract Timelock {
         emit NewDelay(delay);
     }
 
+    //待执行的管理员调用，将自己设置为管理员
     function acceptAdmin() public {
         require(
             msg.sender == pendingAdmin,
@@ -117,6 +125,7 @@ contract Timelock {
         emit NewAdmin(admin);
     }
 
+    //只能由时间锁调用，设置pendingAdmin
     function setPendingAdmin(address pendingAdmin_) public {
         require(
             msg.sender == address(this),
@@ -127,6 +136,7 @@ contract Timelock {
         emit NewPendingAdmin(pendingAdmin);
     }
 
+    //添加事务
     function queueTransaction(
         address target,
         uint256 value,
@@ -138,11 +148,13 @@ contract Timelock {
             msg.sender == admin,
             'Timelock::queueTransaction: Call must come from admin.'
         );
+        //预计执行时间必须大于计算出来的时间时间
         require(
             eta >= getBlockTimestamp().add(delay),
             'Timelock::queueTransaction: Estimated execution block must satisfy delay.'
         );
 
+        //计算出key，存入mapping
         bytes32 txHash = keccak256(
             abi.encode(target, value, signature, data, eta)
         );
@@ -152,6 +164,7 @@ contract Timelock {
         return txHash;
     }
 
+    //取消事务
     function cancelTransaction(
         address target,
         uint256 value,
@@ -172,6 +185,7 @@ contract Timelock {
         emit CancelTransaction(txHash, target, value, signature, data, eta);
     }
 
+    //执行事务，必须判断事务为未执行状态
     function executeTransaction(
         address target,
         uint256 value,
@@ -187,19 +201,26 @@ contract Timelock {
         bytes32 txHash = keccak256(
             abi.encode(target, value, signature, data, eta)
         );
+
+        //事务必须存在并且为未执行状态
         require(
             queuedTransactions[txHash],
             "Timelock::executeTransaction: Transaction hasn't been queued."
         );
+
+        //当前时间必须大于预计执行时间
         require(
             getBlockTimestamp() >= eta,
             "Timelock::executeTransaction: Transaction hasn't surpassed time lock."
         );
+
+        //当前时间必须小于存活时间？否则是过期的
         require(
             getBlockTimestamp() <= eta.add(GRACE_PERIOD),
             'Timelock::executeTransaction: Transaction is stale.'
         );
 
+        //更新状态
         queuedTransactions[txHash] = false;
 
         bytes memory callData;
